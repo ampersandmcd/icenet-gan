@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - xarray
+  - iris
+  - tqdm
+  - imageio
+  - ffmpeg
+  - imageio-ffmpeg
+  - cdsapi
+  - ecmwf-api-client
+  - lightning
+  - wandb
