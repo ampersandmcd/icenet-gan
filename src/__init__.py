@@ -7,7 +7,7 @@ from .download_seas5_forecasts import download_seas5_forecasts
 from .biascorrect_seas5_forecasts import biascorrect_seas5_forecasts
 from .gen_data_loader_config import gen_data_loader_config
 from .preproc_icenet_data import preproc_icenet_data
-from .models import linear_trend_forecast, UNet, LitUNet, Generator, Discriminator
+from .models import linear_trend_forecast, UNet, LitUNet, Generator, Discriminator, LitGAN
 from .utils import IceNetDataPreProcessor, IceNetDataset, Visualise
 from .train_icenet import train_icenet
 from .metrics import IceNetAccuracy, SIEError

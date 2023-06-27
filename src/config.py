@@ -71,6 +71,7 @@ missing_dates = [pd.Timestamp("1986-4-1"), pd.Timestamp("1986-5-1"),
 
 # Get API key from https://wandb.ai/authorize
 WANDB_API_KEY = "c9359bdb7a98988cb4d1b0a92098e2a8f6bda29a"
+WANDB_USERNAME = "andrewmcdonald"
 # Absolute path to store wandb generated files (folder must exist)
 #   Note: user must have write access
 WANDB_DIR = "/users/anddon76/icenet/icenet-gan/wandb"

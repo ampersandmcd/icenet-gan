@@ -48,10 +48,12 @@ def train_icenet(args):
     if args.model == "unet":
 
         # construct unet
-        model = UNet(input_channels=train_dataset.tot_num_channels,
-                     filter_size=args.filter_size,
-                     n_filters_factor=args.n_filters_factor,
-                     n_forecast_months=train_dataset.config["n_forecast_months"])
+        model = UNet(
+            input_channels=train_dataset.tot_num_channels,
+            filter_size=args.filter_size,
+            n_filters_factor=args.n_filters_factor,
+            n_forecast_months=train_dataset.config["n_forecast_months"]
+        )
         
         # configure unet loss with reduction="none" for sample weighting
         if args.criterion == "ce":
@@ -71,18 +73,22 @@ def train_icenet(args):
     elif args.model == "gan":
 
         # construct generator
-        generator = Generator(input_channels=train_dataset.tot_num_channels,
-                              filter_size=args.filter_size,
-                              n_filters_factor=args.n_filters_factor,
-                              n_forecast_months=train_dataset.config["n_forecast_months"],
-                              sigma=args.sigma)
+        generator = Generator(
+            input_channels=train_dataset.tot_num_channels,
+            filter_size=args.filter_size,
+            n_filters_factor=args.n_filters_factor,
+            n_forecast_months=train_dataset.config["n_forecast_months"],
+            sigma=args.sigma
+        )
 
         # construct discriminator
-        discriminator = Discriminator(input_channels=train_dataset.tot_num_channels,
-                                      filter_size=args.filter_size,
-                                      n_filters_factor=args.n_filters_factor,
-                                      n_forecast_months=train_dataset.config["n_forecast_months"],
-                                      mode=args.discriminator_mode)
+        discriminator = Discriminator(
+            input_channels=train_dataset.tot_num_channels,
+            filter_size=args.filter_size,
+            n_filters_factor=args.n_filters_factor,
+            n_forecast_months=train_dataset.config["n_forecast_months"],
+            mode=args.discriminator_mode
+        )
         
         # configure losses with reduction="none" for sample weighting
         if args.generator_fake_criterion == "ce":
