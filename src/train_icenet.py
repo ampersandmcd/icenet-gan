@@ -81,7 +81,8 @@ def train_icenet(args):
         discriminator = Discriminator(input_channels=train_dataset.tot_num_channels,
                                       filter_size=args.filter_size,
                                       n_filters_factor=args.n_filters_factor,
-                                      n_forecast_months=train_dataset.config["n_forecast_months"])
+                                      n_forecast_months=train_dataset.config["n_forecast_months"],
+                                      mode=args.discriminator_mode)
         
         # configure losses with reduction="none" for sample weighting
         if args.generator_fake_criterion == "ce":
@@ -142,7 +143,7 @@ def train_icenet(args):
         fast_dev_run=args.fast_dev_run
     )
     trainer.logger = wandb_logger
-    trainer.callbacks.append(ModelCheckpoint(monitor="val_accuracy"))
+    trainer.callbacks.append(ModelCheckpoint(monitor="val_accuracy", mode="max"))
     trainer.callbacks.append(Visualise(val_dataloader, 
                                        n_to_visualise=args.n_to_visualise, 
                                        n_forecast_months=val_dataset.config["n_forecast_months"]))
@@ -175,6 +176,9 @@ if __name__ == '__main__':
                         help="Loss to train GAN generator structural similarity", required=False)    
     parser.add_argument("--generator_lambda", default=500, type=float,
                         help="Trade off between instance-level fake-out and structural loss", required=False)    
+    parser.add_argument("--discriminator_mode", default="forecast", type=str, choices=["forecast", "onestep"],
+                        help="Whether D should classify entire forecast as real/fake or"
+                             "each timestep separately as real/fake", required=False)
     parser.add_argument("--discriminator_criterion", default="ce", type=str, choices=["ce"],
                         help="Loss to train GAN discriminator", required=False)
     parser.add_argument("--d_lr_factor", default=1, type=float,

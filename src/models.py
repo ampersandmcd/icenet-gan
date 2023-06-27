@@ -341,6 +341,7 @@ class Discriminator(nn.Module):
                  filter_size=3, 
                  n_filters_factor=1, 
                  n_forecast_months=6,
+                 mode="forecast",
                  use_temp_scaling=False,
                  n_output_classes=3,
                 **kwargs):
@@ -353,10 +354,16 @@ class Discriminator(nn.Module):
         self.filter_size = filter_size
         self.n_filters_factor = n_filters_factor
         self.n_forecast_months = n_forecast_months
+        self.mode = mode
         self.use_temp_scaling = use_temp_scaling
         self.n_output_classes = n_output_classes
 
-        self.conv1a = nn.Conv2d(in_channels=n_forecast_months*n_output_classes, 
+        if mode == "forecast":  # evaluate entire forecast at once
+            in_channels = n_forecast_months*n_output_classes
+        elif mode == "onestep":  # evaluate one step at a time
+            in_channels = n_output_classes
+
+        self.conv1a = nn.Conv2d(in_channels=in_channels,
                                 out_channels=int(128*n_filters_factor),
                                 kernel_size=filter_size,
                                 padding="same")
@@ -410,15 +417,25 @@ class Discriminator(nn.Module):
                                     kernel_size=filter_size,
                                     padding="same")
         self.avgpool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc = nn.Linear(in_features=int(1024*n_filters_factor), out_features=1)  # probability of real
-        
-    def forward(self, x):
 
-        # note that for discriminator the inputs are y and y_hat
-        # i.e. y and y_hat are differently-shaped from x
-        # i.e. we first need to make c and t into one dimension
+        # classify as real/fake
+        self.fc = nn.Linear(in_features=int(1024*n_filters_factor), out_features=1)
+
+        
+    def forward(self, x, sample_weight):
+
+        # our discriminator should only pay attention to pixels where sample_weight > 0
+        x = x * sample_weight
+
+        # reshape depending on forecast mode
         b, h, w, c, t = x.shape
-        x = x.reshape((b, h, w, c*t)) 
+        if self.mode == "forecast":
+            # combine c and t into one dimension for per-forecast classification
+            x = x.reshape((b, h, w, c*t))
+        elif self.mode == "onestep":
+            x = torch.movedim(x, 0, -1)  # place batch dimension last
+            x = x.reshape((h, w, c, b*t))  # combine b and t such that each t is its own instance
+            x = torch.movedim(x, -1, 0)  # place batch dimension first again
 
         # now transpose from shape (b, h, w, c) to (b, c, h, w) for pytorch conv2d layers
         x = torch.movedim(x, -1, 1)  # move c from last to second dim
@@ -716,7 +733,7 @@ class LitGAN(pl.LightningModule):
         fake_forecasts = self.generator(x)
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to fake out discriminator where real==1 and fake==0
         g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
@@ -747,7 +764,7 @@ class LitGAN(pl.LightningModule):
         self.toggle_optimizer(d_opt)
 
         # try to detect real forecasts (observations) where real==1 and fake==0
-        d_real_forecasts = self.discriminator(y)
+        d_real_forecasts = self.discriminator(y, sample_weight)
         d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts))
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
@@ -755,7 +772,7 @@ class LitGAN(pl.LightningModule):
         fake_forecasts = self.generator(x)
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to detect fake forecasts where real==1 and fake==0
         d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
@@ -784,7 +801,7 @@ class LitGAN(pl.LightningModule):
         fake_forecasts = self.generator(x)
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to fake out discriminator where real==1 and fake==0
         g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
@@ -810,12 +827,12 @@ class LitGAN(pl.LightningModule):
         ########################
     
         # try to detect real forecasts (observations) where real==1 and fake==0
-        d_real_forecasts = self.discriminator(y)
+        d_real_forecasts = self.discriminator(y, sample_weight)
         d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts))
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to detect fake forecasts where real==1 and fake==0
         d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
@@ -853,7 +870,7 @@ class LitGAN(pl.LightningModule):
         fake_forecasts = self.generator(x)
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to fake out discriminator where real==1 and fake==0
         g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
@@ -878,12 +895,12 @@ class LitGAN(pl.LightningModule):
         ########################
     
         # try to detect real forecasts (observations) where real==1 and fake==0
-        d_real_forecasts = self.discriminator(y)
+        d_real_forecasts = self.discriminator(y, sample_weight)
         d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts),)
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
         # pass fake forecasts to discriminator
-        d_fake_forecasts = self.discriminator(fake_forecasts)
+        d_fake_forecasts = self.discriminator(fake_forecasts, sample_weight)
 
         # try to detect fake forecasts where real==1 and fake==0
         d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
