@@ -960,7 +960,7 @@ def linear_trend_forecast(forecast_month, n_linear_years='all', da=None, dataset
     '''
 
     if da is None:
-        with xr.open_dataset('data/obs/siconca_EASE.nc') as ds:
+        with xr.open_dataset(f"{config.obs_data_folder}/siconca_EASE.nc") as ds:
             da = next(iter(ds.data_vars.values()))
 
     valid_dates = [pd.Timestamp(date) for date in da.time.values]
