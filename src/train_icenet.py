@@ -85,17 +85,21 @@ def train_icenet(args):
         
         # configure losses with reduction="none" for sample weighting
         if args.generator_fake_criterion == "ce":
-            generator_fake_criterion = nn.CrossEntropyLoss(reduction="none")
+            generator_fake_criterion = nn.BCEWithLogitsLoss(reduction="none")
         else:
             raise ValueError(f"Invalid generator fake loss function: {args.criterion}.")
 
         if args.generator_structural_criterion == "l1":
             generator_structural_criterion = nn.L1Loss(reduction="none")
+        elif args.generator_structural_criterion == "ce":
+            generator_structural_criterion = nn.CrossEntropyLoss(reduction="none")
+        elif args.generator_structural_criterion == "focal":
+            generator_structural_criterion = sigmoid_focal_loss
         else:
             raise ValueError(f"Invalid generator structural loss function: {args.criterion}.")
 
         if args.discriminator_criterion == "ce":
-            discriminator_criterion = nn.CrossEntropyLoss(reduction="none")
+            discriminator_criterion = nn.BCEWithLogitsLoss(reduction="none")
         else:
             raise ValueError(f"Invalid discriminator loss function: {args.criterion}.")
         
@@ -155,7 +159,7 @@ if __name__ == '__main__':
     # parse command line arguments
     parser = ArgumentParser(description="Train IceNet")
     parser.add_argument("--name", default="default", type=str, help="Name of wandb run")
-    parser.add_argument("--model", default="unet", type=str, choices=["unet", "gan"],
+    parser.add_argument("--model", default="gan", type=str, choices=["unet", "gan"],
                         help="Choice of model architecture", required=False)
     
     # model configurations applicable to UNet
@@ -167,13 +171,13 @@ if __name__ == '__main__':
                         help="Noise factor to set sampling temperature in G", required=False)    
     parser.add_argument("--generator_fake_criterion", default="ce", type=str, choices=["ce"],
                         help="Loss to train GAN generator instance-level fake-out", required=False)
-    parser.add_argument("--generator_structural_criterion", default="l1", type=str, choices=["l1"],
+    parser.add_argument("--generator_structural_criterion", default="ce", type=str, choices=["ce", "focal", "l1"],
                         help="Loss to train GAN generator structural similarity", required=False)    
-    parser.add_argument("--generator_lambda", default=100, type=float,
+    parser.add_argument("--generator_lambda", default=500, type=float,
                         help="Trade off between instance-level fake-out and structural loss", required=False)    
     parser.add_argument("--discriminator_criterion", default="ce", type=str, choices=["ce"],
                         help="Loss to train GAN discriminator", required=False)
-    parser.add_argument("--d_lr_factor", default=5, type=float,
+    parser.add_argument("--d_lr_factor", default=1, type=float,
                         help="Factor by which to multiply G learning rate for use on D", required=False)    
     
     # model configurations applicable to both UNet and GAN
@@ -183,7 +187,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_filters_factor", default=1.0, type=float,
                         help="Scale factor with which to modify number of convolutional filters")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="Learning rate for UNet/Generator")
-    parser.add_argument("--batch_size", default=4, type=int, help="Batch size")
+    parser.add_argument("--batch_size", default=8, type=int, help="Batch size")
     parser.add_argument("--seed", default=42, type=int, help="Random seed")
 
     # hardware configurations applicable to both UNet and GAN

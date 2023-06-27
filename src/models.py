@@ -410,7 +410,7 @@ class Discriminator(nn.Module):
                                     kernel_size=filter_size,
                                     padding="same")
         self.avgpool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc = nn.Linear(in_features=int(1024*n_filters_factor), out_features=2)
+        self.fc = nn.Linear(in_features=int(1024*n_filters_factor), out_features=1)  # probability of real
         
     def forward(self, x):
 
@@ -460,10 +460,8 @@ class Discriminator(nn.Module):
         pool5 = self.avgpool(conv5)  # shape (b, 1024, 1, 1)
         pool5 = pool5.squeeze(-1, -2)  # shape (b, 1024)
 
-        final_layer_logits = self.fc(pool5)  # shape (b, 2)
-        output = F.softmax(final_layer_logits, dim=1)  # apply over real/fake dimension
-
-        return output  # shape (b, 2)
+        logits = self.fc(pool5)  # shape (b, 1)
+        return logits  # return logits of p(real) (apply softmax to get p(real))
 
 
 ### PyTorch Lightning modules:
@@ -712,6 +710,7 @@ class LitGAN(pl.LightningModule):
         ####################
         # Train Generator
         ####################
+        self.toggle_optimizer(g_opt)
 
         # generate forecasts
         fake_forecasts = self.generator(x)
@@ -720,31 +719,36 @@ class LitGAN(pl.LightningModule):
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to fake out discriminator where real==1 and fake==0
-        g_fake_loss = self.generator_fake_criterion(torch.ones_like(d_fake_forecasts), d_fake_forecasts)
+        g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
         g_fake_loss = torch.mean(g_fake_loss)  # weight real/fake loss equally on each instance
 
         # compute loss to preserve structural similarity of forecasts
-        g_structural_loss = self.generator_structural_criterion(fake_forecasts, y)
-        g_structural_loss = torch.mean(g_structural_loss * sample_weight)  # weight spatially
+        if isinstance(self.generator_structural_criterion, nn.CrossEntropyLoss):  # requires int class encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.argmax(-2).long())
+        else:  # requires one-hot encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.movedim(-2, 1))
+        g_structural_loss = torch.mean(g_structural_loss * sample_weight.movedim(-2, 1))  # weight spatially
 
         # sum losses with hyperparameter lambda for generator's total loss
         g_loss = g_fake_loss + self.generator_lambda * g_structural_loss
-        self.log("g_train_loss", g_loss, sync_dist=True)
+        self.log("g_train_loss", g_loss, prog_bar=True, sync_dist=True)
         self.log("g_train_loss_fake", g_fake_loss, sync_dist=True)
         self.log("g_train_loss_structural", g_structural_loss, sync_dist=True)
 
         # manually step generator optimiser
-        g_opt.zero_grad()
         self.manual_backward(g_loss)
         g_opt.step()
+        g_opt.zero_grad()
+        self.untoggle_optimizer(g_opt)
         
         #####################
         # Train Discriminator
         #####################
+        self.toggle_optimizer(d_opt)
 
         # try to detect real forecasts (observations) where real==1 and fake==0
         d_real_forecasts = self.discriminator(y)
-        d_real_loss = self.discriminator_criterion(torch.ones_like(d_real_forecasts), d_real_forecasts)
+        d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts))
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
         # generate fake forecasts
@@ -754,19 +758,20 @@ class LitGAN(pl.LightningModule):
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to detect fake forecasts where real==1 and fake==0
-        d_fake_loss = self.discriminator_criterion(torch.zeros_like(d_fake_forecasts), d_fake_forecasts)
+        d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
         d_fake_loss = torch.mean(d_fake_loss)  # weight real/fake loss equally on each instance
 
         # sum losses with equal weight
         d_loss = d_real_loss + d_fake_loss
-
-        # manually step discriminator optimiser
-        d_opt.zero_grad()
-        self.manual_backward(d_loss)
-        d_opt.step()
-        self.log("d_train_loss", d_loss, sync_dist=True)
+        self.log("d_train_loss", d_loss, prog_bar=True, sync_dist=True)
         self.log("d_train_loss_real", d_real_loss, sync_dist=True)
         self.log("d_train_loss_fake", d_fake_loss, sync_dist=True)
+
+        # manually step discriminator optimiser
+        self.manual_backward(d_loss)
+        d_opt.step()
+        d_opt.zero_grad()
+        self.untoggle_optimizer(d_opt)        
 
     def validation_step(self, batch, batch_idx):
         x, y, sample_weight = batch
@@ -782,12 +787,15 @@ class LitGAN(pl.LightningModule):
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to fake out discriminator where real==1 and fake==0
-        g_fake_loss = self.generator_fake_criterion(torch.ones_like(d_fake_forecasts), d_fake_forecasts)
+        g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
         g_fake_loss = torch.mean(g_fake_loss)  # weight real/fake loss equally on each instance
 
         # compute loss to preserve structural similarity of forecasts
-        g_structural_loss = self.generator_structural_criterion(fake_forecasts, y)
-        g_structural_loss = torch.mean(g_structural_loss * sample_weight)  # weight spatially
+        if isinstance(self.generator_structural_criterion, nn.CrossEntropyLoss):  # requires int class encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.argmax(-2).long())
+        else:  # requires one-hot encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.movedim(-2, 1))
+        g_structural_loss = torch.mean(g_structural_loss * sample_weight.movedim(-2, 1))  # weight spatially
 
         # sum losses with hyperparameter lambda for generator's total loss
         g_loss = g_fake_loss + self.generator_lambda * g_structural_loss
@@ -803,14 +811,14 @@ class LitGAN(pl.LightningModule):
     
         # try to detect real forecasts (observations) where real==1 and fake==0
         d_real_forecasts = self.discriminator(y)
-        d_real_loss = self.discriminator_criterion(torch.ones_like(d_real_forecasts), d_real_forecasts)
+        d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts))
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
         # pass fake forecasts to discriminator
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to detect fake forecasts where real==1 and fake==0
-        d_fake_loss = self.discriminator_criterion(torch.zeros_like(d_fake_forecasts), d_fake_forecasts)
+        d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
         d_fake_loss = torch.mean(d_fake_loss)  # weight real/fake loss equally on each instance
 
         # sum losses with equal weight
@@ -838,7 +846,7 @@ class LitGAN(pl.LightningModule):
         x, y, sample_weight = batch
 
         ####################
-        # Validate Generator
+        # Test Generator
         ####################
             
         # generate forecasts
@@ -848,12 +856,16 @@ class LitGAN(pl.LightningModule):
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to fake out discriminator where real==1 and fake==0
-        g_fake_loss = self.generator_fake_criterion(torch.ones_like(d_fake_forecasts), d_fake_forecasts)
+        g_fake_loss = self.generator_fake_criterion(d_fake_forecasts, torch.ones_like(d_fake_forecasts))
         g_fake_loss = torch.mean(g_fake_loss)  # weight real/fake loss equally on each instance
 
-        # compute loss to preserve structural similarity of forecasts
+        # compute loss to preserve structural similarity of binary forecasts
         g_structural_loss = self.generator_structural_criterion(fake_forecasts, y)
-        g_structural_loss = torch.mean(g_structural_loss * sample_weight)  # weight spatially
+        if isinstance(self.generator_structural_criterion, nn.CrossEntropyLoss):  # requires int class encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.argmax(-2).long())
+        else:  # requires one-hot encoding
+            g_structural_loss = self.generator_structural_criterion(fake_forecasts.movedim(-2, 1), y.movedim(-2, 1))
+        g_structural_loss = torch.mean(g_structural_loss * sample_weight.movedim(-2, 1))  # weight spatially
 
         # sum losses with hyperparameter lambda for generator's total loss
         g_loss = g_fake_loss + self.generator_lambda * g_structural_loss
@@ -862,19 +874,19 @@ class LitGAN(pl.LightningModule):
         self.log("g_test_loss", g_loss, on_step=False, on_epoch=True, sync_dist=True)  # epoch-level loss
 
         ########################
-        # Validate Discriminator
+        # Test Discriminator
         ########################
     
         # try to detect real forecasts (observations) where real==1 and fake==0
         d_real_forecasts = self.discriminator(y)
-        d_real_loss = self.discriminator_criterion(torch.ones_like(d_real_forecasts), d_real_forecasts)
+        d_real_loss = self.discriminator_criterion(d_real_forecasts, torch.ones_like(d_real_forecasts),)
         d_real_loss = d_real_loss.mean()  # weight real/fake loss equally on each instance
 
         # pass fake forecasts to discriminator
         d_fake_forecasts = self.discriminator(fake_forecasts)
 
         # try to detect fake forecasts where real==1 and fake==0
-        d_fake_loss = self.discriminator_criterion(torch.zeros_like(d_fake_forecasts), d_fake_forecasts)
+        d_fake_loss = self.discriminator_criterion(d_fake_forecasts, torch.zeros_like(d_fake_forecasts))
         d_fake_loss = torch.mean(d_fake_loss)  # weight real/fake loss equally on each instance
 
         # sum losses with equal weight
@@ -892,7 +904,6 @@ class LitGAN(pl.LightningModule):
         y_hat_pred = fake_forecasts.argmax(dim=-2).long()  # argmax over c where shape is (b, h, w, c, t)
         self.metrics.update(y_hat_pred, y.argmax(dim=-2).long(), sample_weight.squeeze(dim=-2))  # shape (b, h, w, t)
 
-
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute(), on_step=False, on_epoch=True, sync_dist=True)  # epoch-level metrics
         self.test_metrics.reset()
@@ -900,7 +911,7 @@ class LitGAN(pl.LightningModule):
     def configure_optimizers(self):
         g_opt = torch.optim.Adam(self.generator.parameters(), lr=self.learning_rate)
         d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=self.learning_rate * self.d_lr_factor)
-        return g_opt, d_opt
+        return [g_opt, d_opt], []  # add schedulers to second list if desired
 
 
 ### Benchmark models:
