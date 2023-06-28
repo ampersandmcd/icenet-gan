@@ -109,7 +109,7 @@ def sie_error(preds: xr.DataArray, target: xr.DataArray, mask: xr.DataArray, lea
     return mean_sie_error.item()
 
 
-def visualise_forecast(forecast_dict, forecast_mask, date, diff=False, true_forecast=None):
+def visualise_forecast(forecast_dict, forecast_mask, date, diff=False, true_forecast=None, ternerise=True):
 
     leadtimes = list(forecast_dict.values())[0].leadtime.values
     fig, ax = plt.subplots(len(forecast_dict), len(leadtimes), 
@@ -120,16 +120,15 @@ def visualise_forecast(forecast_dict, forecast_mask, date, diff=False, true_fore
 
             pred = forecast.sel(time=date, leadtime=leadtime)
             mask = forecast_mask.sel(time=date, leadtime=leadtime)
-            if len(pred.ice_class) == 1:
+            if len(pred.ice_class) == 1 and ternerise:
                 # sic value
                 pred_ter = xr.where(pred > 0.15, 1, 0)
                 pred_ter += xr.where(pred > 0.85, 1, 0)
-            else:
+                pred = pred_ter
+            elif ternerise:
                 # ternary classification
-                pred_ter = pred.reduce(np.argmax, dim="ice_class")
-            pred_ter = pred_ter.squeeze()
-            mask = mask.squeeze()
-            pred_ter = pred_ter * mask.values
+                pred = pred.reduce(np.argmax, dim="ice_class", keepdims=True)
+            pred = pred * mask.values
 
             if diff:
                 # plot the difference between the forecast and the truth
@@ -137,14 +136,19 @@ def visualise_forecast(forecast_dict, forecast_mask, date, diff=False, true_fore
                 true_ter = xr.where(true > 0.15, 1, 0)
                 true_ter += xr.where(true > 0.85, 1, 0)
                 true_ter = true_ter.squeeze()
-                to_plot = pred_ter - true_ter
+                to_plot = pred - true_ter
                 vmin, center = -2, 0
             else:
                 # plot the forecast
-                to_plot = pred_ter
+                to_plot = pred
                 vmin, center = 0, False
 
-            xr.plot.contourf(to_plot, ax=ax[i, leadtime-1], add_colorbar=False, vmin=vmin, center=center)
+            to_plot = to_plot.squeeze()
+            if ternerise:
+                xr.plot.contourf(to_plot, ax=ax[i, leadtime-1], add_colorbar=False, vmin=vmin, center=center)
+            else:
+                xr.plot.imshow(to_plot, ax=ax[i, leadtime-1], add_colorbar=False)
+
             ax[i, leadtime-1].set_title(f"{forecast_name} Prediction {date + relativedelta(months=leadtime)}"
                                         f"\nInitialised {date}")
             ax[i, leadtime-1].set_xlabel("Eastings [km]")
