@@ -12,3 +12,5 @@ dependencies:
   - ecmwf-api-client
   - lightning
   - wandb
+  - scikit-learn
+  - scikit-image
