@@ -11,4 +11,4 @@ from .models import linear_trend_forecast, UNet, LitUNet, Generator, Discriminat
 from .utils import IceNetDataPreProcessor, IceNetDataset, Visualise
 from .train_icenet import train_icenet
 from .metrics import IceNetAccuracy, SIEError
-from .evaluate import binary_accuracy, binary_f1, ternary_accuracy, ternary_f1, sie_error, visualise_forecast, ssim, psnr
+from .evaluate import binary_accuracy, binary_f1, ternary_accuracy, ternary_f1, sie_error, visualise_forecast, ssim, psnr, rapsd
