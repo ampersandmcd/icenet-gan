@@ -120,18 +120,10 @@ def ssim(preds: xr.DataArray, target: xr.DataArray, leadtimes_to_evaluate: list)
     for time in preds.time:
         for leadtime in leadtimes_to_evaluate:
             # can only evaluate one rgb image at a time
-            if len(preds.ice_class) == 1:
-                p = preds.sel(time=time, leadtime=leadtime).squeeze()
-                p_int = xr.where(p > 0.15, 1, 0)
-                p_int += xr.where(p > 0.85, 1, 0)
-                p_rgb = np.eye(3)[p_int]
-            else:
-                p_rgb = preds.sel(time=time, leadtime=leadtime).squeeze()
+            p = preds.sel(time=time, leadtime=leadtime).squeeze()
             t = target.sel(time=time, leadtime=leadtime).squeeze()
-            t_int = xr.where(t > 0.15, 1, 0)
-            t_int += xr.where(t > 0.85, 1, 0)
-            t_rgb = np.eye(3)[t_int]
-            score = structural_similarity(t_rgb, p_rgb, data_range=1.0, channel_axis=-1)
+            t, p = xr.broadcast(t, p)  # make target 3-channeled by repeating single channel
+            score = structural_similarity(t, p, data_range=1.0, channel_axis=-1)
             scores.append(score)
 
     return np.mean(scores)
@@ -147,18 +139,10 @@ def psnr(preds: xr.DataArray, target: xr.DataArray, leadtimes_to_evaluate: list)
     for time in preds.time:
         for leadtime in leadtimes_to_evaluate:
             # can only evaluate one rgb image at a time
-            if len(preds.ice_class) == 1:
-                p = preds.sel(time=time, leadtime=leadtime).squeeze()
-                p_int = xr.where(p > 0.15, 1, 0)
-                p_int += xr.where(p > 0.85, 1, 0)
-                p_rgb = np.eye(3)[p_int]
-            else:
-                p_rgb = preds.sel(time=time, leadtime=leadtime).squeeze()
+            p = preds.sel(time=time, leadtime=leadtime).squeeze()
             t = target.sel(time=time, leadtime=leadtime).squeeze()
-            t_int = xr.where(t > 0.15, 1, 0)
-            t_int += xr.where(t > 0.85, 1, 0)
-            t_rgb = np.eye(3)[t_int]
-            score = peak_signal_noise_ratio(t_rgb, p, data_range=1.0)
+            t, p = xr.broadcast(t, p)  # make target 3-channeled by repeating single channel
+            score = peak_signal_noise_ratio(t, p, data_range=1.0)
             scores.append(score)
 
     return np.mean(scores)
