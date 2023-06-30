@@ -411,11 +411,6 @@ class Discriminator(nn.Module):
                                 out_channels=int(1024*n_filters_factor),
                                 kernel_size=filter_size,
                                 padding="same")
-        
-        self.final_conv = nn.Conv2d(in_channels=int(1024*n_filters_factor),
-                                    out_channels=2,  # classify as real or fake
-                                    kernel_size=filter_size,
-                                    padding="same")
         self.avgpool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
 
         # classify as real/fake

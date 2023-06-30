@@ -7,7 +7,8 @@ Welcome to `icenet-gan`, an experimental extension of the [IceNet](https://icene
 
 ## Structure
 
-TODO
+- `src`: Contains the core data downloading and preprocessing code, along with model architecture definitions and training scripts.
+- `notebooks`: Contains five notebooks providing a step-by-step walkthrough of the entire project. If you're new to the project, we recommend you start here!
 
 ## Context
 
